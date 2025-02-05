@@ -6,35 +6,41 @@ import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
+import net.minecraft.world.World;
+import net.minecraft.util.math.BlockPos;
+import net.replaceitem.integratedcircuit.circuit.components.DayNightSensorComponent;
+import net.replaceitem.integratedcircuit.circuit.components.PortComponent;
+import net.replaceitem.integratedcircuit.circuit.context.BlockEntityServerCircuitContext;
 import net.replaceitem.integratedcircuit.circuit.context.ServerCircuitContext;
 import net.replaceitem.integratedcircuit.circuit.state.ComponentState;
 import net.replaceitem.integratedcircuit.util.ComponentPos;
 import net.replaceitem.integratedcircuit.util.FlatDirection;
-import org.jetbrains.annotations.Nullable;
-import net.minecraft.world.World;
-import net.replaceitem.integratedcircuit.circuit.components.DayNightSensorComponent;
-import net.replaceitem.integratedcircuit.circuit.components.HumiditySensorComponent;
-import net.replaceitem.integratedcircuit.circuit.context.BlockEntityServerCircuitContext;
-import net.minecraft.util.math.BlockPos;
-import net.replaceitem.integratedcircuit.circuit.components.PortComponent;
 
+// ✅ Fix for @Nullable annotations
+import org.jetbrains.annotations.Nullable;
 
 public class ServerCircuit extends Circuit {
 
     private final ServerCircuitContext context;
     protected final CircuitTickScheduler circuitTickScheduler = new CircuitTickScheduler();
-    private long lastCheckedTime = -1;
+    private long lastCheckedTime = -1; // Track last daylight check time
+
+    private int lastSignalStrength = -1; // Store last daylight signal strength
+
+    public int getLastSignalStrength() {
+        return lastSignalStrength;
+    }
 
 
     public ServerCircuit(ServerCircuitContext context) {
-        super(false);
+        super(false); // Server circuits are never client-side
         this.context = context;
     }
 
     @Override
     public World getLevel() {
-        return this.context instanceof BlockEntityServerCircuitContext ?
-                ((BlockEntityServerCircuitContext) this.context).getWorld() : null;
+        return (context instanceof BlockEntityServerCircuitContext) ?
+                ((BlockEntityServerCircuitContext) context).getWorld() : null;
     }
 
     @Override
@@ -47,16 +53,17 @@ public class ServerCircuit extends Circuit {
     }
 
     @Override
-    public long getTimeOfDay() {
-        World world = this.getLevel();
-        return (world != null) ? world.getTimeOfDay() : 0;  // ✅ Prevent crashes if world is null
+    public long getTime() {
+        return context.getTime();
     }
 
     public void tick() {
         this.circuitTickScheduler.tick(this.getTime(), 65536, this::tickBlock);
 
-        // Schedule updates for Day/Night Sensor
-        scheduleDayNightSensorUpdate();
+        // Update Day/Night Sensors every 20 ticks (1 second)
+        if (this.getTime() % 20 == 0) {
+            updateDayNightSensors();
+        }
 
         context.markDirty();
     }
@@ -72,7 +79,7 @@ public class ServerCircuit extends Circuit {
         ComponentPos pos = PORT_POSITIONS.get(direction);
         ComponentState state = getComponentState(pos);
         boolean isOutput = state.get(PortComponent.IS_OUTPUT);
-        if(!isOutput && state.get(PortComponent.POWER) != power) {
+        if (!isOutput && state.get(PortComponent.POWER) != power) {
             setComponentState(pos, state.with(PortComponent.POWER, power), Component.NOTIFY_ALL);
         }
     }
@@ -80,12 +87,12 @@ public class ServerCircuit extends Circuit {
     public int getPortOutputStrength(FlatDirection direction) {
         ComponentPos pos = PORT_POSITIONS.get(direction);
         ComponentState state = getComponentState(pos);
-        if(!state.get(PortComponent.IS_OUTPUT)) return 0;
+        if (!state.get(PortComponent.IS_OUTPUT)) return 0;
         return state.get(PortComponent.POWER);
     }
 
     public static ServerCircuit fromNbt(NbtCompound nbt, ServerCircuitContext context) {
-        if(nbt == null) return null;
+        if (nbt == null) return null;
         ServerCircuit circuit = new ServerCircuit(context);
         circuit.readNbt(nbt);
         return circuit;
@@ -97,17 +104,11 @@ public class ServerCircuit extends Circuit {
     public void readNbt(NbtCompound nbt) {
         super.readNbt(nbt);
         NbtList tickSchedulerNbt = nbt.getList("tickScheduler", NbtElement.COMPOUND_TYPE);
-        if(this.context.isReady()) {
+        if (this.context.isReady()) {
             loadTickScheduler(tickSchedulerNbt);
         } else {
-            // this has to be stored until the context is ready, since the time is needed to get the correct triggerTime for scheduled ticks
             this.tickSchedulerNbtBuffer = tickSchedulerNbt;
         }
-    }
-
-    @Override
-    public long getTime() {
-        return context.getTime();
     }
 
     @Override
@@ -117,8 +118,8 @@ public class ServerCircuit extends Circuit {
     }
 
     public void onWorldIsPresent() {
-        if(this.tickSchedulerNbtBuffer != null) {
-            loadTickScheduler(tickSchedulerNbtBuffer);
+        if (this.tickSchedulerNbtBuffer != null) {
+            loadTickScheduler(this.tickSchedulerNbtBuffer);
             this.tickSchedulerNbtBuffer = null;
         }
     }
@@ -130,10 +131,11 @@ public class ServerCircuit extends Circuit {
     @Override
     public void placeComponentState(ComponentPos pos, Component component, FlatDirection placementRotation) {
         ComponentState placementState = component.getPlacementState(this, pos, placementRotation);
-        if(placementState == null) placementState = Components.AIR_DEFAULT_STATE;
+        if (placementState == null) placementState = Components.AIR_DEFAULT_STATE;
 
         ComponentState beforeState = this.getComponentState(pos);
-        if(beforeState.isAir() && placementState.isAir()) return;
+        if (beforeState.isAir() && placementState.isAir()) return;
+
         this.setComponentState(pos, placementState, Component.NOTIFY_ALL);
         placementState.getComponent().onPlaced(this, pos, placementState);
     }
@@ -144,15 +146,14 @@ public class ServerCircuit extends Circuit {
     }
 
     public void playSoundExternal(@Nullable PlayerEntity except, SoundEvent sound, SoundCategory category, float volume, float pitch, ComponentPos pos) {
-        World world = this.getLevel(); // ✅ Get the world instance from the context
-        if (world == null) return; // Prevent crashes if the world is null
+        World world = this.getLevel();
+        if (world == null) return;
 
-        BlockPos blockPos = this.context instanceof BlockEntityServerCircuitContext ?
+        BlockPos blockPos = (this.context instanceof BlockEntityServerCircuitContext) ?
                 ((BlockEntityServerCircuitContext) this.context).getPos() : null;
 
-        if (blockPos == null) return; // Ensure we have a valid position
+        if (blockPos == null) return;
 
-        // ✅ Play the sound at the block position
         world.playSound(null, blockPos, sound, category, volume, pitch);
     }
 
@@ -165,7 +166,6 @@ public class ServerCircuit extends Circuit {
     public void updateNeighbors(ComponentPos pos, Component component) {
         this.updateNeighborsAlways(pos, component);
     }
-
 
     @Override
     public void updateNeighborsAlways(ComponentPos pos, Component sourceComponent) {
@@ -184,32 +184,64 @@ public class ServerCircuit extends Circuit {
         this.neighborUpdater.updateNeighbor(state, pos, sourceComponent, sourcePos, notify);
     }
 
+    public void updateDayNightSensors() {
+        if (isClient) return; // Ensure we only run on the server
 
-    public void scheduleDayNightSensorUpdate() {
-        if (isClient) return; // Don't run on client-side
-
-        // Get the world and time
         World world = getLevel();
         if (world == null) return;
 
-        long currentTime = world.getTimeOfDay() % 24000;
+        // Calculate new daylight signal strength
+        int newSignalStrength = calculateDaylightSignalStrength(world);
 
-        // Check only if day/night status changes
-        boolean isNight = currentTime >= 13000;
-        if (currentTime / 1000 != lastCheckedTime / 1000) {
-            lastCheckedTime = currentTime;
+        // Skip updates if the signal strength hasn't changed
+        if (newSignalStrength == lastSignalStrength) return;
+        lastSignalStrength = newSignalStrength;
 
-            // Loop through all components in the circuit
-            for (int x = 0; x < SIZE; x++) {
-                for (int y = 0; y < SIZE; y++) {
-                    ComponentPos pos = new ComponentPos(x, y);
-                    ComponentState state = getComponentState(pos);
+        // Iterate through all components in the circuit
+        for (int x = 0; x < SIZE; x++) {
+            for (int y = 0; y < SIZE; y++) {
+                ComponentPos pos = new ComponentPos(x, y);
+                ComponentState state = getComponentState(pos);
 
-                    if (state.getComponent() instanceof DayNightSensorComponent) {
-                        scheduleBlockTick(pos, state.getComponent(), 2); // Schedule like Comparator
-                    }
+                // If it's a Day/Night Sensor, notify the circuit that redstone should be updated
+                if (state.getComponent() instanceof DayNightSensorComponent) {
+                    updateNeighborsAlways(pos, state.getComponent());
+                    updateComparators(pos, state.getComponent());
                 }
             }
         }
     }
+
+    /**
+     * Ensures all circuits get notified once for redstone updates instead of per-component updates.
+     */
+    private void updateNeighborsAndComparators() {
+        for (int x = 0; x < SIZE; x++) {
+            for (int y = 0; y < SIZE; y++) {
+                ComponentPos pos = new ComponentPos(x, y);
+                ComponentState state = getComponentState(pos);
+
+                if (state.getComponent() instanceof DayNightSensorComponent) {
+                    updateNeighborsAlways(pos, state.getComponent());
+                    updateComparators(pos, state.getComponent());
+                }
+            }
+        }
+    }
+
+    // Helper function for daylight strength
+    private int calculateDaylightSignalStrength(World world) {
+        BlockPos circuitPos = (context instanceof BlockEntityServerCircuitContext) ?
+                ((BlockEntityServerCircuitContext) context).getPos() : BlockPos.ORIGIN;
+
+        int skyLightLevel = world.getLightLevel(circuitPos.up()); // Check sky light above circuit
+
+        long timeOfDay = world.getTimeOfDay() % 24000;
+        boolean isNight = (timeOfDay >= 13000);
+
+        // ✅ Adjusted to return correct strength
+        return isNight ? Math.max(1, skyLightLevel / 2) : Math.max(0, 15 - (skyLightLevel / 2));
+    }
+
+
 }

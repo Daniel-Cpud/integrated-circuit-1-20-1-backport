@@ -6,7 +6,6 @@ import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
-import net.minecraft.world.World;
 import net.replaceitem.integratedcircuit.circuit.Circuit;
 import net.replaceitem.integratedcircuit.circuit.Component;
 import net.replaceitem.integratedcircuit.circuit.state.ComponentState;
@@ -16,11 +15,9 @@ import net.replaceitem.integratedcircuit.util.ComponentPos;
 import net.replaceitem.integratedcircuit.util.FlatDirection;
 import net.replaceitem.integratedcircuit.util.IntegratedCircuitIdentifier;
 import net.replaceitem.integratedcircuit.circuit.ServerCircuit;
-import net.minecraft.util.math.random.Random;
 
 public class DayNightSensorComponent extends Component {
 
-    // Property to track sensor mode (true = Night Mode, false = Day Mode)
     private static final BooleanComponentProperty NIGHT_MODE = new BooleanComponentProperty("night_mode", 1);
 
     public static BooleanComponentProperty getNightModeProperty() {
@@ -52,54 +49,38 @@ public class DayNightSensorComponent extends Component {
     }
 
     @Override
-    public void onBlockAdded(ComponentState state, Circuit circuit, ComponentPos pos, ComponentState oldState) {
-        if (!circuit.isClient) {
-            circuit.scheduleTick(pos, this, 1); //  Ensures ticking starts on placement
-        }
-    }
-
-    @Override
     public void onUse(ComponentState state, Circuit circuit, ComponentPos pos, PlayerEntity player) {
-        if (circuit.isClient) return; //  Only process on the server
+        if (circuit.isClient) return; // Only process on the server
 
-        // Toggle mode (Day ↔ Night)
+        // Toggle day/night mode
         ComponentState newState = state.cycle(NIGHT_MODE);
-
-        // Apply only if the state actually changed
-        if (!newState.equals(state)) {
-            circuit.setComponentState(pos, newState, Component.NOTIFY_ALL);
-            circuit.updateNeighborsAlways(pos, this);
-
-            // Play a toggle sound
-            circuit.playSound(null, SoundEvents.BLOCK_LEVER_CLICK, SoundCategory.BLOCKS, 0.3f, newState.get(NIGHT_MODE) ? 0.6f : 0.5f);
-        }
-    }
-
-
-    @Override
-    public void onStateReplaced(ComponentState state, Circuit circuit, ComponentPos pos, ComponentState newState) {
-        if (state.isOf(newState.getComponent())) return;
+        circuit.setComponentState(pos, newState, Component.NOTIFY_ALL);
         circuit.updateNeighborsAlways(pos, this);
+
+        // Play toggle sound
+        circuit.playSound(null, SoundEvents.BLOCK_LEVER_CLICK, SoundCategory.BLOCKS, 0.3f, newState.get(NIGHT_MODE) ? 0.6f : 0.5f);
     }
 
     @Override
     public int getWeakRedstonePower(ComponentState state, Circuit circuit, ComponentPos pos, FlatDirection direction) {
-        // Ensure we have access to the world instance
-        World world = circuit.getLevel(); // Uses circuit's world context
-        if (world == null) return 0; // Prevents crashes
+        if (!(circuit instanceof ServerCircuit)) return 0;
 
-        // Get the current time in ticks (0-23999) where 0 = sunrise, 12000 = sunset, 18000 = midnight
-        long timeOfDay = world.getTimeOfDay() % 24000;
+        // Get daylight signal from the circuit
+        int daylightStrength = ((ServerCircuit) circuit).getLastSignalStrength();
 
-        boolean isNight = timeOfDay >= 13000; // Night starts at tick 13000
-        boolean isActive = (state.get(NIGHT_MODE) && isNight) || (!state.get(NIGHT_MODE) && !isNight);
+        // Determine if the sensor should emit power
+        boolean isNightMode = state.get(NIGHT_MODE);
 
-        return isActive ? 15 : 0;
+        // 🔹 Instead of checking only for `== 0`, use a THRESHOLD for night detection
+        boolean shouldEmitPower = isNightMode ? (daylightStrength <= 4) : (daylightStrength > 4);
+
+        return shouldEmitPower ? 15 : 0; // 15 = full power, 0 = no power
     }
+
 
     @Override
     public boolean emitsRedstonePower(ComponentState state) {
-        return true;
+        return true; // Always capable of emitting redstone
     }
 
     @Override
@@ -111,41 +92,4 @@ public class DayNightSensorComponent extends Component {
     public void appendProperties(ComponentState.PropertyBuilder builder) {
         builder.append(NIGHT_MODE);
     }
-
-    @Override
-    public void scheduledTick(ComponentState state, ServerCircuit circuit, ComponentPos pos, Random random) {
-        World world = circuit.getLevel();
-        if (world == null) return;
-
-        // Get time of day (0-23999), check if it's night
-        long timeOfDay = world.getTimeOfDay() % 24000;
-        boolean isNight = timeOfDay >= 13000;
-
-        boolean currentMode = state.get(NIGHT_MODE);
-        boolean shouldEmit = (currentMode && isNight) || (!currentMode && !isNight);
-
-        // Check the current redstone power output
-        int currentPower = state.getWeakRedstonePower(circuit, pos, FlatDirection.NORTH);
-        int newPower = shouldEmit ? 15 : 0;
-
-        if (currentPower != newPower) {
-            //  Update component state
-            ComponentState newState = state.with(NIGHT_MODE, shouldEmit);
-            circuit.setComponentState(pos, newState, Component.NOTIFY_ALL);
-
-            //  Explicitly update redstone power in the circuit
-            circuit.updateNeighborsAlways(pos, this);
-        }
-
-        //  Ensure the game knows redstone power changed and update comparator as well
-        circuit.updateComparators(pos, this);  // Force comparator updates if used
-        circuit.updateNeighborsAlways(pos, this); // Force all neighbors
-
-        // Schedule next tick to keep checking the time
-        circuit.scheduleBlockTick(pos, this, 20);
-    }
-
-
-
-
 }

@@ -76,7 +76,6 @@ public class ClientCircuit extends Circuit {
         return null;
     }
 
-    @Override
     public long getTimeOfDay() {
         World world = getLevel();
         return (world != null) ? world.getTimeOfDay() : 0; // Return world time if available, else 0
