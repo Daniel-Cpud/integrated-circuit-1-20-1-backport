@@ -57,7 +57,6 @@ public class ServerCircuit extends Circuit {
 
         // Schedule updates for Day/Night Sensor
         scheduleDayNightSensorUpdate();
-        scheduleHumiditySensorUpdate();
 
         context.markDirty();
     }
@@ -213,26 +212,4 @@ public class ServerCircuit extends Circuit {
             }
         }
     }
-
-    public void scheduleHumiditySensorUpdate() {
-        if (isClient) return; // Don't run on client-side
-
-        World world = getLevel();
-        if (world == null) return;
-
-        boolean isRaining = world.isRaining();
-
-        for (int x = 0; x < SIZE; x++) {
-            for (int y = 0; y < SIZE; y++) {
-                ComponentPos pos = new ComponentPos(x, y);
-                ComponentState state = getComponentState(pos);
-
-                if (state.getComponent() instanceof HumiditySensorComponent) {
-                    scheduleBlockTick(pos, state.getComponent(), 2);
-                }
-            }
-        }
-    }
-
-
 }
