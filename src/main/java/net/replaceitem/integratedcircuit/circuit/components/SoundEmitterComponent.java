@@ -24,14 +24,27 @@ public class SoundEmitterComponent extends Component {
     // Property to store the selected sound index (0-4)
     private static final IntComponentProperty SOUND_INDEX = new IntComponentProperty("sound_index", 0, 4);
 
-    // Predefined sounds
+    // Predefined sounds for circuit alerts
     private static final SoundEvent[] SOUND_LIST = {
             SoundEvents.BLOCK_ANVIL_LAND,
             SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP,
-            SoundEvents.BLOCK_PISTON_EXTEND,
+            SoundEvents.ENTITY_EGG_THROW,
             SoundEvents.BLOCK_AMETHYST_BLOCK_BREAK,
-            SoundEvents.BLOCK_BAMBOO_BREAK
+            SoundEvents.BLOCK_BAMBOO_BREAK,
+
+            SoundEvents.BLOCK_BEACON_ACTIVATE,
+            SoundEvents.BLOCK_REDSTONE_TORCH_BURNOUT,
+            SoundEvents.BLOCK_SCULK_SENSOR_CLICKING,
+            SoundEvents.BLOCK_TRIPWIRE_ATTACH,
+            SoundEvents.BLOCK_DISPENSER_DISPENSE,
+
+            SoundEvents.ENTITY_IRON_GOLEM_REPAIR,
+            SoundEvents.ENTITY_SHULKER_OPEN,
+            SoundEvents.ENTITY_GHAST_WARN,
+            SoundEvents.BLOCK_CONDUIT_ACTIVATE,
+            SoundEvents.BLOCK_RESPAWN_ANCHOR_CHARGE
     };
+
 
     private static final Identifier ITEM_TEXTURE = new IntegratedCircuitIdentifier("textures/integrated_circuit/sound_emitter.png");
 

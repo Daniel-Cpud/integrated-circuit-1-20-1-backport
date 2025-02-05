@@ -15,7 +15,7 @@ import org.jetbrains.annotations.Nullable;
 import net.minecraft.world.World;
 import net.replaceitem.integratedcircuit.circuit.components.DayNightSensorComponent;
 import net.replaceitem.integratedcircuit.circuit.context.BlockEntityServerCircuitContext;
-
+import net.minecraft.util.math.BlockPos; // ✅ Fix missing import
 
 public class ServerCircuit extends Circuit {
 
@@ -138,7 +138,16 @@ public class ServerCircuit extends Circuit {
     }
 
     public void playSoundExternal(@Nullable PlayerEntity except, SoundEvent sound, SoundCategory category, float volume, float pitch, ComponentPos pos) {
-        this.context.playSound(except, sound, category, volume, pitch);
+        World world = this.getLevel(); // ✅ Get the world instance from the context
+        if (world == null) return; // Prevent crashes if the world is null
+
+        BlockPos blockPos = this.context instanceof BlockEntityServerCircuitContext ?
+                ((BlockEntityServerCircuitContext) this.context).getPos() : null;
+
+        if (blockPos == null) return; // Ensure we have a valid position
+
+        // ✅ Play the sound at the block position
+        world.playSound(null, blockPos, sound, category, volume, pitch);
     }
 
     @Override
