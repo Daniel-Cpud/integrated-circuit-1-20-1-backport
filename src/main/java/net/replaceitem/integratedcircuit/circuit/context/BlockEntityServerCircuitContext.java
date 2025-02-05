@@ -35,8 +35,8 @@ public class BlockEntityServerCircuitContext implements ServerCircuitContext {
     public World getWorld() {
         return this.blockEntity.getWorld();
     }
-    
-    private BlockPos getPos() {
+
+    public BlockPos getPos() {
         return this.blockEntity.getPos();
     }
 
