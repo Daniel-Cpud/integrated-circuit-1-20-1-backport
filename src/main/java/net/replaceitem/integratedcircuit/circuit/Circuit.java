@@ -11,19 +11,26 @@ import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
+import net.replaceitem.integratedcircuit.circuit.components.DayNightSensorComponent;
 import net.replaceitem.integratedcircuit.circuit.components.PortComponent;
 import net.replaceitem.integratedcircuit.circuit.state.ComponentState;
 import net.replaceitem.integratedcircuit.util.ComponentPos;
 import net.replaceitem.integratedcircuit.util.FlatDirection;
 import org.jetbrains.annotations.Nullable;
-
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.world.World;
 import java.util.Arrays;
 
 public abstract class Circuit implements CircuitAccess {
     public static final int SIZE = 15;
-    
+
     public static final BiMap<FlatDirection, ComponentPos> PORT_POSITIONS = EnumHashBiMap.create(FlatDirection.class);
-    
+
+    // Add this method to access the world time
+    public World getLevel() {
+        return MinecraftClient.getInstance().world;
+    }
+
     static {
         PORT_POSITIONS.put(FlatDirection.NORTH, new ComponentPos(7, -1));
         PORT_POSITIONS.put(FlatDirection.EAST, new ComponentPos(15, 7));
@@ -35,7 +42,7 @@ public abstract class Circuit implements CircuitAccess {
     public final ComponentState[] ports = new ComponentState[4];
 
     protected final CircuitNeighborUpdater neighborUpdater;
-    
+
     /**
      * @see net.minecraft.world.World#isClient
      */
@@ -57,7 +64,7 @@ public abstract class Circuit implements CircuitAccess {
     public boolean isInside(ComponentPos pos) {
         return pos.getX() >= 0 && pos.getX() < SIZE && pos.getY() >= 0 && pos.getY() < SIZE;
     }
-    
+
     public abstract long getTime();
 
     public boolean isValidPos(ComponentPos pos) {
@@ -123,6 +130,9 @@ public abstract class Circuit implements CircuitAccess {
             }
             if ((flags & Component.NOTIFY_NEIGHBORS) != 0) {
                 this.updateNeighbors(pos, oldState.getComponent());
+                if (!this.isClient && state.hasComparatorOutput()) {
+                    this.updateComparators(pos, state.getComponent());
+                }
             }
             if ((flags & Block.FORCE_STATE) == 0 && maxUpdateDepth > 0) {
                 int i = flags & ~(Block.NOTIFY_NEIGHBORS | Block.SKIP_DROPS);
@@ -133,6 +143,13 @@ public abstract class Circuit implements CircuitAccess {
         }
         return true;
     }
+
+    /**
+     * New Version of setComponentState that ensures the state is properly updated.
+     * @return true if the component state was successfully changed.
+     */
+
+
 
     public static @Nullable FlatDirection getPortSide(ComponentPos pos) {
         return PORT_POSITIONS.inverse().get(pos);
@@ -277,6 +294,21 @@ public abstract class Circuit implements CircuitAccess {
         state.onUse(this, pos, player);
     }
 
+    public void updateComparators(ComponentPos pos, Component component) {
+        for (FlatDirection direction : FlatDirection.VALUES) {
+            ComponentPos offsetPos = pos.offset(direction);
+            ComponentState state = getComponentState(offsetPos);
+            if(state.isOf(Components.COMPARATOR)) {
+                this.updateNeighbor(state, offsetPos, component, pos, false);
+            } else if (state.isSolidBlock(this, offsetPos)) {
+                offsetPos = offsetPos.offset(direction);
+                state = getComponentState(offsetPos);
+                if(state.isOf(Components.COMPARATOR)) {
+                    this.updateNeighbor(state, offsetPos, component, pos, false);
+                }
+            }
+        }
+    }
 
     /**
      * @see net.minecraft.world.World#removeBlock(BlockPos, boolean)
@@ -298,7 +330,8 @@ public abstract class Circuit implements CircuitAccess {
     public boolean breakBlock(ComponentPos pos) {
         return breakBlock(pos, 512);
     }
-    
+
+
     public boolean breakBlock(ComponentPos pos, int maxUpdateDepth) {
         ComponentState blockState = this.getComponentState(pos);
         if (blockState.isAir()) {
@@ -306,10 +339,16 @@ public abstract class Circuit implements CircuitAccess {
         }
         return this.setComponentState(pos, Components.AIR_DEFAULT_STATE, Component.NOTIFY_ALL, maxUpdateDepth);
     }
-    
+
     public final void playSound(@Nullable PlayerEntity except, SoundEvent sound, SoundCategory category, float volume, float pitch) {
         playSoundInternal(except, sound, category, volume, pitch * 1.6f);
     }
-    
+
+
+    public void scheduleTick(ComponentPos pos, Component component, int delay) {
+        ComponentState state = getComponentState(pos);
+        component.tick(state, this, pos); // ✅ Call tick() on the correct instance
+    }
+
     protected abstract void playSoundInternal(@Nullable PlayerEntity except, SoundEvent sound, SoundCategory category, float volume, float pitch);
 }

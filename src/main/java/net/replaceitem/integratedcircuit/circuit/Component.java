@@ -18,7 +18,7 @@ import net.replaceitem.integratedcircuit.util.FlatDirection;
 import java.util.Set;
 
 public abstract class Component {
-    
+
     // copy from Block, only few are needed, but all kept for future
     public static final int NOTIFY_NEIGHBORS = 1;
     public static final int NOTIFY_LISTENERS = 2;
@@ -30,7 +30,7 @@ public abstract class Component {
     public static final int SKIP_LIGHTING_UPDATES = 128;
 
     public static final int NOTIFY_ALL = 3;
-    
+
     private final int id;
     private final Settings settings;
 
@@ -99,7 +99,7 @@ public abstract class Component {
     public final ComponentState getDefaultState() {
         return this.defaultState;
     }
-    
+
     public ComponentState getPlacementState(Circuit circuit, ComponentPos pos, FlatDirection rotation) {
         ComponentState defaultState = this.getDefaultState();
         if(this.properties.contains(FacingComponent.FACING)) return defaultState.with(FacingComponent.FACING, rotation);
@@ -126,27 +126,31 @@ public abstract class Component {
     }
 
     public void neighborUpdate(ComponentState state, Circuit circuit, ComponentPos pos, Component sourceBlock, ComponentPos sourcePos, boolean notify) {
-        
+
     }
 
     public void onBlockAdded(ComponentState state, Circuit circuit, ComponentPos pos, ComponentState oldState) {
-        
+
     }
-    
+
     public void onStateReplaced(ComponentState state, Circuit circuit, ComponentPos pos, ComponentState newState) {
-        
+
     }
-    
+
     public void onUse(ComponentState state, Circuit circuit, ComponentPos pos, PlayerEntity player) {
-        
+
     }
-    
+
     public void onPlaced(ServerCircuit circuit, ComponentPos pos, ComponentState state) {
-        
+
     }
 
     public void scheduledTick(ComponentState state, ServerCircuit circuit, ComponentPos pos, Random random) {
-        
+
+    }
+
+    public void tick(ComponentState state, Circuit circuit, ComponentPos pos) {
+        // Default does nothing, but specific components can override it
     }
 
     public ComponentState getStateForNeighborUpdate(ComponentState state, FlatDirection direction, ComponentState neighborState, Circuit circuit, ComponentPos pos, ComponentPos neighborPos) {
@@ -166,6 +170,15 @@ public abstract class Component {
     }
 
     public int getStrongRedstonePower(ComponentState state, Circuit circuit, ComponentPos pos, FlatDirection direction) {
+        return 0;
+    }
+
+
+    public boolean hasComparatorOutput(ComponentState componentState) {
+        return false;
+    }
+
+    public int getComparatorOutput(ComponentState state, Circuit circuit, ComponentPos pos) {
         return 0;
     }
 

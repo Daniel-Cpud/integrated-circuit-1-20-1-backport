@@ -1,6 +1,7 @@
 package net.replaceitem.integratedcircuit.circuit.components;
 
 import net.minecraft.block.Block;
+import net.replaceitem.integratedcircuit.util.FlatDirection; // <-- add this import
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.sound.SoundCategory;
@@ -103,8 +104,29 @@ public class ComparatorComponent extends AbstractRedstoneGateComponent {
 
     @Override
     protected int getPower(Circuit circuit, ComponentPos pos, ComponentState state) {
-        // overriding is unnecessary, but when blocks get added that have a comparator power level, this needs to be changed
-        return super.getPower(circuit, pos, state);
+        // Get the base power from the superclass.
+        int power = super.getPower(circuit, pos, state);
+
+        // Retrieve the facing direction from the state.
+        // (Assumes that FacingComponent.FACING is your custom property for the facing direction.)
+        FlatDirection direction = state.get(FacingComponent.FACING);
+        ComponentPos offsetPos = pos.offset(direction);
+        ComponentState offsetState = circuit.getComponentState(offsetPos);
+
+        // If the block in front outputs a comparator signal, use that.
+        if (offsetState.hasComparatorOutput()) {
+            power = offsetState.getComparatorOutput(circuit, offsetPos);
+        }
+        // Otherwise, if power is less than 15 and the block in front is solid,
+        // check one block further.
+        else if (power < 15 && offsetState.isSolidBlock(circuit, offsetPos)) {
+            offsetPos = offsetPos.offset(direction);
+            offsetState = circuit.getComponentState(offsetPos);
+            if (offsetState.hasComparatorOutput()) {
+                power = offsetState.getComparatorOutput(circuit, offsetPos);
+            }
+        }
+        return power;
     }
 
     @Override

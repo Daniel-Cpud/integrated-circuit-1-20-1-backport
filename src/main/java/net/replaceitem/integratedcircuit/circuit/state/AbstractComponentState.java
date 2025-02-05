@@ -2,6 +2,7 @@ package net.replaceitem.integratedcircuit.circuit.state;
 
 import net.replaceitem.integratedcircuit.circuit.Component;
 import net.replaceitem.integratedcircuit.circuit.PropertyMap;
+import net.replaceitem.integratedcircuit.circuit.components.LecternComponent;
 import net.replaceitem.integratedcircuit.circuit.state.property.ComponentProperty;
 
 import java.util.Arrays;
@@ -38,6 +39,7 @@ public abstract class AbstractComponentState {
     public byte encodeStateData() {
         return propertyMap.encode();
     }
+
 
     public short encode() {
         return (short) (this.encodeStateData() << 8 | getComponentId() & 0xFF);

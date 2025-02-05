@@ -47,7 +47,7 @@ public class RepeaterComponent extends AbstractRedstoneGateComponent {
 
 
         Identifier torchTexture = state.get(POWERED) ? TEXTURE_TORCH_ON : TEXTURE_TORCH_OFF;
-        
+
         IntegratedCircuitScreen.renderPartialTexture(drawContext, torchTexture, x, y, 6, 1, 4, 4, renderedRotation.getIndex(),  1, 1, 1, a);
 
         boolean locked = state.get(LOCKED);

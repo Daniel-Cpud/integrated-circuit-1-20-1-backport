@@ -12,15 +12,27 @@ import net.replaceitem.integratedcircuit.circuit.state.ComponentState;
 import net.replaceitem.integratedcircuit.util.ComponentPos;
 import net.replaceitem.integratedcircuit.util.FlatDirection;
 import org.jetbrains.annotations.Nullable;
+import net.minecraft.world.World;
+import net.replaceitem.integratedcircuit.circuit.components.DayNightSensorComponent;
+import net.replaceitem.integratedcircuit.circuit.context.BlockEntityServerCircuitContext;
+
 
 public class ServerCircuit extends Circuit {
-    
+
     private final ServerCircuitContext context;
     protected final CircuitTickScheduler circuitTickScheduler = new CircuitTickScheduler();
+
+
 
     public ServerCircuit(ServerCircuitContext context) {
         super(false);
         this.context = context;
+    }
+
+    @Override
+    public World getLevel() {
+        return this.context instanceof BlockEntityServerCircuitContext ?
+                ((BlockEntityServerCircuitContext) this.context).getWorld() : null;
     }
 
     @Override
@@ -32,9 +44,15 @@ public class ServerCircuit extends Circuit {
         return context;
     }
 
+    private long lastCheckedTime = -1;
+
     public void tick() {
         this.circuitTickScheduler.tick(this.getTime(), 65536, this::tickBlock);
-        context.markDirty(); // TODO - Cheating for now
+
+        // Schedule updates for Day/Night Sensor
+        scheduleDayNightSensorUpdate();
+
+        context.markDirty();
     }
 
     private void tickBlock(ComponentPos pos, Component block) {
@@ -43,7 +61,7 @@ public class ServerCircuit extends Circuit {
             blockState.scheduledTick(this, pos, this.context.getRandom());
         }
     }
-    
+
     public void onExternalPowerChanged(FlatDirection direction, int power) {
         ComponentPos pos = PORT_POSITIONS.get(direction);
         ComponentState state = getComponentState(pos);
@@ -98,7 +116,7 @@ public class ServerCircuit extends Circuit {
             this.tickSchedulerNbtBuffer = null;
         }
     }
-    
+
     private void loadTickScheduler(NbtList list) {
         this.circuitTickScheduler.loadFromNbt(list, this.getTime());
     }
@@ -107,7 +125,7 @@ public class ServerCircuit extends Circuit {
     public void placeComponentState(ComponentPos pos, Component component, FlatDirection placementRotation) {
         ComponentState placementState = component.getPlacementState(this, pos, placementRotation);
         if(placementState == null) placementState = Components.AIR_DEFAULT_STATE;
-        
+
         ComponentState beforeState = this.getComponentState(pos);
         if(beforeState.isAir() && placementState.isAir()) return;
         this.setComponentState(pos, placementState, Component.NOTIFY_ALL);
@@ -116,6 +134,10 @@ public class ServerCircuit extends Circuit {
 
     @Override
     public void playSoundInternal(@Nullable PlayerEntity except, SoundEvent sound, SoundCategory category, float volume, float pitch) {
+        this.context.playSound(except, sound, category, volume, pitch);
+    }
+
+    public void playSoundExternal(@Nullable PlayerEntity except, SoundEvent sound, SoundCategory category, float volume, float pitch, ComponentPos pos) {
         this.context.playSound(except, sound, category, volume, pitch);
     }
 
@@ -145,4 +167,35 @@ public class ServerCircuit extends Circuit {
     public void updateNeighbor(ComponentState state, ComponentPos pos, Component sourceComponent, ComponentPos sourcePos, boolean notify) {
         this.neighborUpdater.updateNeighbor(state, pos, sourceComponent, sourcePos, notify);
     }
+
+
+    public void scheduleDayNightSensorUpdate() {
+        if (isClient) return; // Don't run on client-side
+
+        // Get the world and time
+        World world = getLevel();
+        if (world == null) return;
+
+        long currentTime = world.getTimeOfDay() % 24000;
+
+        // Check only if day/night status changes
+        boolean isNight = currentTime >= 13000;
+        if (currentTime / 1000 != lastCheckedTime / 1000) {
+            lastCheckedTime = currentTime;
+
+            // Loop through all components in the circuit
+            for (int x = 0; x < SIZE; x++) {
+                for (int y = 0; y < SIZE; y++) {
+                    ComponentPos pos = new ComponentPos(x, y);
+                    ComponentState state = getComponentState(pos);
+
+                    if (state.getComponent() instanceof DayNightSensorComponent) {
+                        scheduleBlockTick(pos, state.getComponent(), 2); // Schedule like Comparator
+                    }
+                }
+            }
+        }
+    }
+
+
 }

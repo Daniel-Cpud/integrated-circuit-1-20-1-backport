@@ -26,22 +26,23 @@ import net.replaceitem.integratedcircuit.util.IntegratedCircuitIdentifier;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 
-
 @Environment(EnvType.CLIENT)
 public class IntegratedCircuitScreen extends Screen {
     public static final Identifier BACKGROUND_TEXTURE = new IntegratedCircuitIdentifier("textures/gui/integrated_circuit_screen.png");
 
     protected static final int BACKGROUND_WIDTH = 240;
     protected static final int BACKGROUND_HEIGHT = 230;
-    
+
     public static final int COMPONENT_SIZE = 16;
-
     public static final int RENDER_COMPONENT_SIZE = 12;
-    
-    private static final float RENDER_SCALE = (((float)RENDER_COMPONENT_SIZE)/((float)COMPONENT_SIZE));
+    private static final float RENDER_SCALE = (((float) RENDER_COMPONENT_SIZE) / ((float) COMPONENT_SIZE));
 
+    // --- Palette Constants for a Single Column ---
     private static final int PALETTE_X = 7;
     private static final int PALETTE_Y = 17;
+    private static final int PALETTE_COLUMN_WIDTH = 16;  // Width of the column
+    private static final int PALETTE_SLOT_SIZE = 14;       // Height of each palette slot
+    private static final int PALETTE_AREA_HEIGHT = 200;      // Visible height for the palette
 
     private static final int GRID_X = 40;
     private static final int GRID_Y = 30;
@@ -53,10 +54,12 @@ public class IntegratedCircuitScreen extends Screen {
 
     private int selectedComponentSlot = -1;
     private FlatDirection cursorRotation = FlatDirection.NORTH;
-    
+
     @Nullable
     private ComponentState cursorState = null;
 
+    // --- Scroll offset for the palette ---
+    private int paletteScrollOffset = 0;
 
     private static final Component[] PALETTE = new Component[]{
             Components.BLOCK,
@@ -71,7 +74,11 @@ public class IntegratedCircuitScreen extends Screen {
             Components.LAMP,
             Components.LEVER,
             Components.STONE_BUTTON,
-            Components.WOODEN_BUTTON
+            Components.WOODEN_BUTTON,
+            Components.LECTERN_COMPONENT,
+            Components.COPPER_COMPONENT,
+            Components.TIME_SENSOR,
+            Components.SOUND_BLOCK
     };
 
     public IntegratedCircuitScreen(ClientCircuit circuit, Text name) {
@@ -113,7 +120,6 @@ public class IntegratedCircuitScreen extends Screen {
         this.renderContent(drawContext);
         this.renderPalette(drawContext);
         this.renderCursorState(drawContext, mouseX, mouseY);
-        
 
         super.render(drawContext, mouseX, mouseY, delta);
     }
@@ -123,7 +129,7 @@ public class IntegratedCircuitScreen extends Screen {
         ComponentState componentState = circuit.getComponentState(pos);
         Text text = componentState.getHoverInfoText();
         int textWidth = textRenderer.getWidth(text);
-        drawContext.drawText(this.textRenderer, text, this.x + BACKGROUND_WIDTH - 6 - textWidth,this.titleY, 0x404040, false);
+        drawContext.drawText(this.textRenderer, text, this.x + BACKGROUND_WIDTH - 6 - textWidth, this.titleY, 0x404040, false);
     }
 
     public static Text getSignalStrengthText(int signalStrength) {
@@ -135,8 +141,8 @@ public class IntegratedCircuitScreen extends Screen {
     private void renderCursorState(DrawContext drawContext, int mouseX, int mouseY) {
         ComponentPos pos = getComponentPosAt(mouseX, mouseY);
         boolean validSpot = circuit.getComponentState(pos).isAir();
-        float a = validSpot?0.5f:0.2f;
-        if(this.cursorState != null && circuit.isInside(pos)) {
+        float a = validSpot ? 0.5f : 0.2f;
+        if (this.cursorState != null && circuit.isInside(pos)) {
             drawContext.getMatrices().push();
             drawContext.getMatrices().translate(getGridPosX(0), getGridPosY(0), 0);
             drawContext.getMatrices().scale(RENDER_SCALE, RENDER_SCALE, 1);
@@ -146,27 +152,70 @@ public class IntegratedCircuitScreen extends Screen {
     }
 
     private void renderPalette(DrawContext drawContext) {
+        // Render the palette items in one column taking scrolling into account.
+        int startX = this.x + PALETTE_X;
+        int baseY = this.y + PALETTE_Y;
+
         for (int i = 0; i < PALETTE.length; i++) {
+            int slotY = baseY + (i * PALETTE_SLOT_SIZE) - paletteScrollOffset;
+            // Only render palette items if they fall within the visible palette area.
+            if (slotY + PALETTE_SLOT_SIZE < baseY || slotY > baseY + PALETTE_AREA_HEIGHT) {
+                continue;
+            }
             Component component = PALETTE[i];
-            int slotY = this.getPaletteSlotPosY(i);
+
             drawContext.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-            drawContext.drawTexture(BACKGROUND_TEXTURE, this.x + PALETTE_X, slotY, selectedComponentSlot == i ? 14 : 0, BACKGROUND_HEIGHT, 14, 14);
+            // Draw a slot background from the GUI texture. (Texture U offset is shifted if selected.)
+            drawContext.drawTexture(
+                    BACKGROUND_TEXTURE,
+                    startX,
+                    slotY,
+                    selectedComponentSlot == i ? 14 : 0,
+                    BACKGROUND_HEIGHT,
+                    PALETTE_COLUMN_WIDTH - 2,
+                    PALETTE_SLOT_SIZE - 2
+            );
+
             Identifier itemTexture = component.getItemTexture();
-            if(itemTexture != null) renderPaletteItem(drawContext, itemTexture, this.x+PALETTE_X+1, slotY+1);
+            if (itemTexture != null) {
+                // Draw the component’s icon inside the slot.
+                renderPaletteItem(drawContext, itemTexture, startX + 1, slotY + 1);
+            }
+        }
+
+        // --- Draw scroll indicators ---
+        int totalPaletteHeight = PALETTE.length * PALETTE_SLOT_SIZE;
+        int maxOffset = Math.max(0, totalPaletteHeight - PALETTE_AREA_HEIGHT);
+        if (maxOffset > 0) {
+            // If there is content above, draw an upward arrow.
+            if (paletteScrollOffset > 0) {
+                Text upArrow = Text.literal("▲");
+                int arrowWidth = this.textRenderer.getWidth(upArrow);
+                int arrowX = startX + (PALETTE_COLUMN_WIDTH - arrowWidth) / 2;
+                int arrowY = baseY; // You may adjust this value for a margin effect
+                drawContext.drawText(this.textRenderer, upArrow, arrowX, arrowY, 0xFFFFFF, false);
+            }
+            // If there is content below, draw a downward arrow.
+            if (paletteScrollOffset < maxOffset) {
+                Text downArrow = Text.literal("▼");
+                int arrowWidth = this.textRenderer.getWidth(downArrow);
+                int arrowX = startX + (PALETTE_COLUMN_WIDTH - arrowWidth) / 2;
+                int arrowY = baseY + PALETTE_AREA_HEIGHT - this.textRenderer.fontHeight;
+                drawContext.drawText(this.textRenderer, downArrow, arrowX, arrowY, 0xFFFFFF, false);
+            }
         }
     }
-    
+
     private void renderPaletteItem(DrawContext drawContext, Identifier itemTexture, int x, int y) {
-        drawContext.setShaderColor(1,1,1,1);
+        drawContext.setShaderColor(1, 1, 1, 1);
         drawContext.drawTexture(itemTexture, x, y, 0, 0, RENDER_COMPONENT_SIZE, RENDER_COMPONENT_SIZE, RENDER_COMPONENT_SIZE, RENDER_COMPONENT_SIZE);
     }
 
     protected void renderContent(DrawContext drawContext) {
         drawContext.getMatrices().push();
         drawContext.getMatrices().translate(getGridPosX(0), getGridPosY(0), 0);
-        
         drawContext.getMatrices().scale(RENDER_SCALE, RENDER_SCALE, 1);
-        
+
         for (FlatDirection direction : FlatDirection.VALUES) {
             ComponentState port = circuit.ports[direction.getIndex()];
             ComponentPos pos = Circuit.PORT_POSITIONS.get(direction);
@@ -179,7 +228,6 @@ public class IntegratedCircuitScreen extends Screen {
                 renderComponentStateInGrid(drawContext, componentState, i, j, 1);
             }
         }
-        
         drawContext.getMatrices().pop();
     }
 
@@ -190,7 +238,6 @@ public class IntegratedCircuitScreen extends Screen {
     protected void renderComponentStateInGrid(DrawContext drawContext, ComponentState state, int x, int y, float a) {
         renderComponentState(drawContext, state, x * COMPONENT_SIZE, y * COMPONENT_SIZE, a);
     }
-
 
     private static void renderComponentTexture(DrawContext drawContext, Identifier component, int x, int y, int rot) {
         renderComponentTexture(drawContext, component, x, y, rot, 1, 1, 1, 1);
@@ -204,15 +251,17 @@ public class IntegratedCircuitScreen extends Screen {
         renderPartialTexture(drawContext, component, x, y, u, v, 16, 16, rot, r, g, b, a, u, v, w, h);
     }
 
-
-    public static void renderPartialTexture(DrawContext drawContext, Identifier texture, int componentX, int componentY, int x, int y, int textureW, int textureH, int rot, float r, float g, float b, float a) {
+    public static void renderPartialTexture(DrawContext drawContext, Identifier texture, int componentX, int componentY, int x, int y,
+                                            int textureW, int textureH, int rot, float r, float g, float b, float a) {
         renderPartialTexture(drawContext, texture, componentX, componentY, x, y, textureW, textureH, rot, r, g, b, a, 0, 0, textureW, textureH);
     }
 
-    private static void renderPartialTexture(DrawContext drawContext, Identifier texture, int componentX, int componentY, int x, int y, int textureW, int textureH, int rot, float r, float g, float b, float a, int u, int v, int w, int h) {
+    private static void renderPartialTexture(DrawContext drawContext, Identifier texture, int componentX, int componentY, int x, int y,
+                                             int textureW, int textureH, int rot, float r, float g, float b, float a,
+                                             int u, int v, int w, int h) {
         drawContext.getMatrices().push();
-        drawContext.getMatrices().translate(componentX+8, componentY+8, 0);
-        drawContext.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotation((float) (rot*Math.PI*0.5)));
+        drawContext.getMatrices().translate(componentX + 8, componentY + 8, 0);
+        drawContext.getMatrices().multiply(RotationAxis.POSITIVE_Z.rotation((float) (rot * Math.PI * 0.5)));
         drawContext.getMatrices().translate(-8, -8, 0);
         RenderSystem.enableBlend();
         drawContext.setShaderColor(r, g, b, a);
@@ -221,20 +270,21 @@ public class IntegratedCircuitScreen extends Screen {
     }
 
     private void selectPalette(int slot) {
-        if(slot < 0 || slot >= PALETTE.length) return;
+        if (slot < 0 || slot >= PALETTE.length) return;
         selectedComponentSlot = slot;
         this.cursorState = PALETTE[selectedComponentSlot].getDefaultState();
-        if(this.cursorState.getComponent() instanceof FacingComponent) this.cursorState = this.cursorState.with(FacingComponent.FACING, this.cursorRotation);
+        if (this.cursorState.getComponent() instanceof FacingComponent)
+            this.cursorState = this.cursorState.with(FacingComponent.FACING, this.cursorRotation);
     }
 
     private void deselectPalette() {
         selectedComponentSlot = -1;
         this.cursorState = null;
     }
-    
+
     private void pickPalette(Component component) {
         for (int i = 0; i < PALETTE.length; i++) {
-            if(PALETTE[i] == component) {
+            if (PALETTE[i] == component) {
                 selectPalette(i);
             }
         }
@@ -242,27 +292,24 @@ public class IntegratedCircuitScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if(this.client == null) return false;
+        if (this.client == null) return false;
         ComponentPos clickedPos = getComponentPosAt((int) mouseX, (int) mouseY);
 
-
-        if(matchesMouse(DefaultConfig.config.getRotateKeybind(), button)) {
+        if (matchesMouse(DefaultConfig.config.getRotateKeybind(), button)) {
             rotateComponent(1);
             return true;
         }
-        
-        
+
         boolean isPlace = matchesMouse(DefaultConfig.config.getPlaceKeybind(), button);
-        
         boolean isInCircuit = circuit.isInside(clickedPos);
         startedDraggingInside = false;
-        if(isInCircuit) {
+        if (isInCircuit) {
             boolean isDestroy = !isPlace && matchesMouse(DefaultConfig.config.getDestroyKeybind(), button);
-            boolean isPick = !isDestroy &&  matchesMouse(DefaultConfig.config.getPickKeybind(), button);
+            boolean isPick = !isDestroy && matchesMouse(DefaultConfig.config.getPickKeybind(), button);
 
-            if(isPlace) {
+            if (isPlace) {
                 ComponentState state = circuit.getComponentState(clickedPos);
-                if(state.isAir()) {
+                if (state.isAir()) {
                     placeComponent(clickedPos);
                     startedDraggingInside = true;
                 } else {
@@ -270,27 +317,27 @@ public class IntegratedCircuitScreen extends Screen {
                 }
                 return true;
             }
-            if(isDestroy) {
+            if (isDestroy) {
                 breakComponent(clickedPos);
                 startedDraggingInside = true;
                 return true;
             }
-            if(isPick) {
+            if (isPick) {
                 ComponentState state = circuit.getComponentState(clickedPos);
                 Component component = state.getComponent();
                 pickPalette(component);
                 return true;
             }
         } else {
-            if(isPlace && Circuit.isPortPos(clickedPos)) {
+            if (isPlace && Circuit.isPortPos(clickedPos)) {
                 circuit.useComponent(clickedPos, this.client.player);
                 return true;
             }
-            
-            if(mouseX >= this.x+PALETTE_X && mouseX < this.x+PALETTE_X+14) {
-                int slot = getPaletteSlotAt((int) mouseY);
-                if(slot >= 0 && slot < PALETTE.length) {
-                    if(selectedComponentSlot != slot) {
+            // Check if the click is within the palette area.
+            if (mouseX >= this.x + PALETTE_X && mouseX < this.x + PALETTE_X + PALETTE_COLUMN_WIDTH) {
+                int slot = getPaletteSlotAt((int) mouseX, (int) mouseY);
+                if (slot >= 0 && slot < PALETTE.length) {
+                    if (selectedComponentSlot != slot) {
                         selectPalette(slot);
                     } else {
                         deselectPalette();
@@ -299,13 +346,6 @@ public class IntegratedCircuitScreen extends Screen {
                 }
             }
         }
-        
-        
-        
-
-
-        
-
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -317,19 +357,19 @@ public class IntegratedCircuitScreen extends Screen {
 
     private void placeComponent(ComponentPos pos) {
         ComponentState state = circuit.getComponentState(pos);
-        if(state.isAir() && this.cursorState != null) {
+        if (state.isAir() && this.cursorState != null) {
             circuit.placeComponentState(pos, this.cursorState.getComponent(), this.cursorRotation);
         }
     }
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        if(startedDraggingInside && this.client != null) {
+        if (startedDraggingInside && this.client != null) {
             ComponentPos mousePos = getComponentPosAt((int) mouseX, (int) mouseY);
-            if(circuit.isInside(mousePos)) {
+            if (circuit.isInside(mousePos)) {
                 boolean isPlace = matchesMouse(DefaultConfig.config.getPlaceKeybind(), button);
                 boolean isDestroy = !isPlace && matchesMouse(DefaultConfig.config.getDestroyKeybind(), button);
-                if(isPlace) {
+                if (isPlace) {
                     placeComponent(mousePos);
                 } else if (isDestroy) {
                     breakComponent(mousePos);
@@ -337,13 +377,11 @@ public class IntegratedCircuitScreen extends Screen {
                 return true;
             }
         }
-
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
-
     private void rotateComponent(int amount) {
-        if(this.cursorState != null && this.cursorState.getComponent() instanceof FacingComponent) {
+        if (this.cursorState != null && this.cursorState.getComponent() instanceof FacingComponent) {
             this.cursorRotation = this.cursorRotation.rotated(amount);
             this.cursorState = this.cursorState.with(FacingComponent.FACING, this.cursorRotation);
         }
@@ -351,7 +389,21 @@ public class IntegratedCircuitScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
-        if(DefaultConfig.config.getInvertScrollDirection()) amount = -amount;
+        // If the mouse is over the palette area, scroll the palette.
+        if (mouseX >= this.x + PALETTE_X && mouseX < this.x + PALETTE_X + PALETTE_COLUMN_WIDTH
+                && mouseY >= this.y + PALETTE_Y && mouseY < this.y + PALETTE_Y + PALETTE_AREA_HEIGHT) {
+            if (DefaultConfig.config.getInvertScrollDirection())
+                amount = -amount;
+            paletteScrollOffset -= (int) (amount * PALETTE_SLOT_SIZE);
+            int totalPaletteHeight = PALETTE.length * PALETTE_SLOT_SIZE;
+            int maxOffset = Math.max(0, totalPaletteHeight - PALETTE_AREA_HEIGHT);
+            if (paletteScrollOffset < 0) paletteScrollOffset = 0;
+            if (paletteScrollOffset > maxOffset) paletteScrollOffset = maxOffset;
+            return true;
+        }
+        // Otherwise, use the default scroll behavior.
+        if (DefaultConfig.config.getInvertScrollDirection())
+            amount = -amount;
         int intAmount = (int) amount;
         switch (DefaultConfig.config.getScrollBehaviour()) {
             case ROTATE -> rotateComponent(-intAmount);
@@ -359,17 +411,15 @@ public class IntegratedCircuitScreen extends Screen {
         }
         return true;
     }
-    
+
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if(matchesKey(DefaultConfig.config.getRotateKeybind(), keyCode, scanCode)) {
+        if (matchesKey(DefaultConfig.config.getRotateKeybind(), keyCode, scanCode)) {
             rotateComponent(1);
             return true;
         }
-        
-        
-        if(keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
-            if(keyCode == GLFW.GLFW_KEY_0) {
+        if (keyCode >= GLFW.GLFW_KEY_0 && keyCode <= GLFW.GLFW_KEY_9) {
+            if (keyCode == GLFW.GLFW_KEY_0) {
                 deselectPalette();
             } else {
                 selectPalette(keyCode - GLFW.GLFW_KEY_1);
@@ -379,32 +429,42 @@ public class IntegratedCircuitScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-
     protected int getPaletteSlotPosY(int slot) {
-        return this.y+PALETTE_Y + slot*14;
+        // Returns the "ideal" y-position for a slot (without scroll offset)
+        return this.y + PALETTE_Y + slot * PALETTE_SLOT_SIZE;
     }
 
-    protected int getPaletteSlotAt(int posY) {
-        return (posY-this.y-PALETTE_Y)/14;
+    protected int getPaletteSlotAt(int x, int y) {
+        int relativeX = x - (this.x + PALETTE_X);
+        int relativeY = y - (this.y + PALETTE_Y);
+        if (relativeX < 0 || relativeX >= PALETTE_COLUMN_WIDTH) return -1;
+        // Adjust for the scroll offset.
+        int adjustedY = relativeY + paletteScrollOffset;
+        int slot = adjustedY / PALETTE_SLOT_SIZE;
+        if (slot < 0 || slot >= PALETTE.length) return -1;
+        return slot;
     }
+
     protected int getGridPosX(int gridX) {
-        return this.x + GRID_X + gridX*RENDER_COMPONENT_SIZE;
+        return this.x + GRID_X + gridX * RENDER_COMPONENT_SIZE;
     }
 
     protected int getGridPosY(int gridY) {
-        return this.y + GRID_Y + gridY*RENDER_COMPONENT_SIZE;
+        return this.y + GRID_Y + gridY * RENDER_COMPONENT_SIZE;
     }
+
     protected int getGridXAt(int pixelX) {
-        return Math.floorDiv(pixelX-this.x-GRID_X, RENDER_COMPONENT_SIZE);
+        return Math.floorDiv(pixelX - this.x - GRID_X, RENDER_COMPONENT_SIZE);
     }
 
     protected int getGridYAt(int pixelY) {
-        return Math.floorDiv(pixelY-this.y-GRID_Y, RENDER_COMPONENT_SIZE);
+        return Math.floorDiv(pixelY - this.y - GRID_Y, RENDER_COMPONENT_SIZE);
     }
 
     protected int getGridPosX(ComponentPos pos) {
         return getGridPosX(pos.getX());
     }
+
     protected int getGridPosY(ComponentPos pos) {
         return getGridPosY(pos.getY());
     }
@@ -412,7 +472,6 @@ public class IntegratedCircuitScreen extends Screen {
     protected ComponentPos getComponentPosAt(int pixelX, int pixelY) {
         return new ComponentPos(getGridXAt(pixelX), getGridYAt(pixelY));
     }
-
 
     public static boolean matchesMouse(InputUtil.Key key, int button) {
         return key.getCategory() == InputUtil.Type.MOUSE && key.getCode() == button;
@@ -424,5 +483,4 @@ public class IntegratedCircuitScreen extends Screen {
         }
         return key.getCategory() == InputUtil.Type.KEYSYM && key.getCode() == keyCode;
     }
-    
 }

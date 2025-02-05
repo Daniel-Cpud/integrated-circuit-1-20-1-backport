@@ -119,7 +119,6 @@ public class ComponentState extends AbstractComponentState {
         this.component.onBlockAdded(this, circuit, pos, oldState);
     }
 
-
     public void prepare(CircuitAccess circuit, ComponentPos pos, int flags) {
         this.prepare(circuit, pos, flags, 512);
     }
@@ -145,6 +144,14 @@ public class ComponentState extends AbstractComponentState {
 
     public boolean canPlaceAt(Circuit circuit, ComponentPos pos) {
         return this.component.canPlaceAt(this, circuit, pos);
+    }
+
+    public boolean hasComparatorOutput() {
+        return this.component.hasComparatorOutput(this);
+    }
+
+    public int getComparatorOutput(Circuit circuit, ComponentPos pos) {
+        return this.component.getComparatorOutput(this, circuit, pos);
     }
 
     public Text getHoverInfoText() {

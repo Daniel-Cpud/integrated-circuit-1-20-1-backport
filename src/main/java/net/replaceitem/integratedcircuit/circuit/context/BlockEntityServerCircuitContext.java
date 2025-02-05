@@ -31,7 +31,8 @@ public class BlockEntityServerCircuitContext implements ServerCircuitContext {
         this.blockEntity = blockEntity;
     }
     
-    private @Nullable World getWorld() {
+    @Nullable
+    public World getWorld() {
         return this.blockEntity.getWorld();
     }
     

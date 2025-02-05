@@ -6,6 +6,7 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.sound.BlockSoundGroup;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
+import net.minecraft.world.World;
 import net.replaceitem.integratedcircuit.circuit.context.ClientCircuitContext;
 import net.replaceitem.integratedcircuit.circuit.state.ComponentState;
 import net.replaceitem.integratedcircuit.network.packet.ComponentInteractionC2SPacket;
@@ -68,6 +69,11 @@ public class ClientCircuit extends Circuit {
     public void useComponent(ComponentPos pos, PlayerEntity player) {
         new ComponentInteractionC2SPacket(pos, this.context.getBlockPos()).send();
         super.useComponent(pos, player);
+    }
+
+    @Override
+    public World getLevel() {
+        return null;
     }
 
     @Override
