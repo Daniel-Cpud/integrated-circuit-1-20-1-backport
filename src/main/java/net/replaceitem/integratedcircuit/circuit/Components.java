@@ -31,6 +31,7 @@ public class Components {
     public static final CopperBulbComponent COPPER_COMPONENT = register(new CopperBulbComponent(16, new Component.Settings("CopperBulb_Component").sounds(BlockSoundGroup.GLASS)));
     public static final DayNightSensorComponent TIME_SENSOR = register(new DayNightSensorComponent(17, new Component.Settings("time_Sensor").sounds(BlockSoundGroup.NETHER_WOOD)));
     public static final SoundEmitterComponent SOUND_BLOCK = register(new SoundEmitterComponent(18, new Component.Settings("sound_block").sounds(BlockSoundGroup.WOOD)));
+    //public static final HumiditySensorComponent HUMIDITY_SENSOR = register(new HumiditySensorComponent(19, new Component.Settings("humidity_sensor").sounds(BlockSoundGroup.METAL)));
 
 
     public static final ComponentState AIR_DEFAULT_STATE = AIR.getDefaultState();

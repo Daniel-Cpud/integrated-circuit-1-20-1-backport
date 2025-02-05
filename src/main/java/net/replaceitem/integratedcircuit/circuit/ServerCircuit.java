@@ -6,7 +6,6 @@ import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
-import net.replaceitem.integratedcircuit.circuit.components.PortComponent;
 import net.replaceitem.integratedcircuit.circuit.context.ServerCircuitContext;
 import net.replaceitem.integratedcircuit.circuit.state.ComponentState;
 import net.replaceitem.integratedcircuit.util.ComponentPos;
@@ -14,14 +13,17 @@ import net.replaceitem.integratedcircuit.util.FlatDirection;
 import org.jetbrains.annotations.Nullable;
 import net.minecraft.world.World;
 import net.replaceitem.integratedcircuit.circuit.components.DayNightSensorComponent;
+import net.replaceitem.integratedcircuit.circuit.components.HumiditySensorComponent;
 import net.replaceitem.integratedcircuit.circuit.context.BlockEntityServerCircuitContext;
-import net.minecraft.util.math.BlockPos; // ✅ Fix missing import
+import net.minecraft.util.math.BlockPos;
+import net.replaceitem.integratedcircuit.circuit.components.PortComponent;
+
 
 public class ServerCircuit extends Circuit {
 
     private final ServerCircuitContext context;
     protected final CircuitTickScheduler circuitTickScheduler = new CircuitTickScheduler();
-
+    private long lastCheckedTime = -1;
 
 
     public ServerCircuit(ServerCircuitContext context) {
@@ -44,13 +46,18 @@ public class ServerCircuit extends Circuit {
         return context;
     }
 
-    private long lastCheckedTime = -1;
+    @Override
+    public long getTimeOfDay() {
+        World world = this.getLevel();
+        return (world != null) ? world.getTimeOfDay() : 0;  // ✅ Prevent crashes if world is null
+    }
 
     public void tick() {
         this.circuitTickScheduler.tick(this.getTime(), 65536, this::tickBlock);
 
         // Schedule updates for Day/Night Sensor
         scheduleDayNightSensorUpdate();
+        scheduleHumiditySensorUpdate();
 
         context.markDirty();
     }
@@ -160,6 +167,7 @@ public class ServerCircuit extends Circuit {
         this.updateNeighborsAlways(pos, component);
     }
 
+
     @Override
     public void updateNeighborsAlways(ComponentPos pos, Component sourceComponent) {
         this.neighborUpdater.updateNeighbors(pos, sourceComponent, null);
@@ -201,6 +209,26 @@ public class ServerCircuit extends Circuit {
                     if (state.getComponent() instanceof DayNightSensorComponent) {
                         scheduleBlockTick(pos, state.getComponent(), 2); // Schedule like Comparator
                     }
+                }
+            }
+        }
+    }
+
+    public void scheduleHumiditySensorUpdate() {
+        if (isClient) return; // Don't run on client-side
+
+        World world = getLevel();
+        if (world == null) return;
+
+        boolean isRaining = world.isRaining();
+
+        for (int x = 0; x < SIZE; x++) {
+            for (int y = 0; y < SIZE; y++) {
+                ComponentPos pos = new ComponentPos(x, y);
+                ComponentState state = getComponentState(pos);
+
+                if (state.getComponent() instanceof HumiditySensorComponent) {
+                    scheduleBlockTick(pos, state.getComponent(), 2);
                 }
             }
         }

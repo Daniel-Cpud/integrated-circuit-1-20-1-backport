@@ -77,6 +77,12 @@ public class ClientCircuit extends Circuit {
     }
 
     @Override
+    public long getTimeOfDay() {
+        World world = getLevel();
+        return (world != null) ? world.getTimeOfDay() : 0; // Return world time if available, else 0
+    }
+
+    @Override
     public long getTime() {
         return context.getTime();
     }

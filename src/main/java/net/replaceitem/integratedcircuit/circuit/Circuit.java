@@ -1,5 +1,4 @@
 package net.replaceitem.integratedcircuit.circuit;
-
 import com.google.common.collect.BiMap;
 import com.google.common.collect.EnumHashBiMap;
 import net.minecraft.block.Block;
@@ -11,25 +10,28 @@ import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
-import net.replaceitem.integratedcircuit.circuit.components.DayNightSensorComponent;
 import net.replaceitem.integratedcircuit.circuit.components.PortComponent;
 import net.replaceitem.integratedcircuit.circuit.state.ComponentState;
 import net.replaceitem.integratedcircuit.util.ComponentPos;
 import net.replaceitem.integratedcircuit.util.FlatDirection;
 import org.jetbrains.annotations.Nullable;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.world.World;
+
 import java.util.Arrays;
+import java.util.Set;
+import java.util.HashSet;
 
 public abstract class Circuit implements CircuitAccess {
     public static final int SIZE = 15;
 
     public static final BiMap<FlatDirection, ComponentPos> PORT_POSITIONS = EnumHashBiMap.create(FlatDirection.class);
+    public final Set<Integer> activeWirelessSignals = new HashSet<>();
 
-    // Add this method to access the world time
-    public World getLevel() {
-        return MinecraftClient.getInstance().world;
-    }
+    // ✅ Abstract method to enforce correct world access
+    public abstract World getLevel();
+
+    // ✅ Abstract method to enforce correct time retrieval
+    public abstract long getTimeOfDay();
 
     static {
         PORT_POSITIONS.put(FlatDirection.NORTH, new ComponentPos(7, -1));
@@ -351,4 +353,5 @@ public abstract class Circuit implements CircuitAccess {
     }
 
     protected abstract void playSoundInternal(@Nullable PlayerEntity except, SoundEvent sound, SoundCategory category, float volume, float pitch);
+
 }
